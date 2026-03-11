@@ -1,0 +1,30 @@
+{
+	"devDependencies": {
+		"@types/node": "^25.4.0",
+		"@types/ws": "^8.18.1",
+		"typescript": "^5.9.3"
+	},
+	"type": "module",
+	"description": "",
+	"name": "@briklab/slokr",
+	"version": "0.5.1",
+	"publishConfig": {
+		"access": "public"
+	},
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"dependencies": {
+		"@briklab/slikr": "latest",
+		"@fails-components/webtransport": "^1.5.3",
+		"@fails-components/webtransport-transport-http3-quiche": "^1.5.3",
+		"ws": "^8.19.0"
+	},
+	"scripts": {
+		"build": "tsc",
+		"prepublishOnly": "pnpm build"
+	}
+}

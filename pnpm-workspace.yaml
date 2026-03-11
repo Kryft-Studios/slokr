@@ -1,0 +1,2 @@
+onlyBuiltDependencies:
+  - '@fails-components/webtransport-transport-http3-quiche'
