@@ -13,6 +13,8 @@ export class Slokr {
         this.bindings.connected.then(() => {
             this._isReady = true;
             console.log(`[Slokr] Server live on ${host}:${port} 🚀`);
+        }).catch((error) => {
+            console.error(`[Slokr] Failed to start server on ${host}:${port}`, error);
         });
     }
 
@@ -58,9 +60,23 @@ export class Slokr {
     send = this.broadcast;
 
     close() {
-        if (this.bindings.wss) this.bindings.wss.close();
-        if (this.bindings.https) this.bindings.https.close();
-        if (this.bindings.wt) this.bindings.wt.stopServer();
+        try {
+            if (this.bindings.wss) this.bindings.wss.close();
+        } catch (error) {
+            console.error("[Slokr] Failed while closing WebSocket server", error);
+        }
+
+        try {
+            if (this.bindings.https) this.bindings.https.close();
+        } catch (error) {
+            console.error("[Slokr] Failed while closing HTTP/HTTPS server", error);
+        }
+
+        try {
+            if (this.bindings.wt) this.bindings.wt.stopServer();
+        } catch (error) {
+            console.error("[Slokr] Failed while closing WebTransport server", error);
+        }
     }
 
     get stats() {
@@ -232,6 +248,16 @@ export namespace Slokr.EVENT {
     }
 }
 
-export default function slokr(type:Slokr.ValidMode,port?:number,host?:string){
+function slokr(type:Slokr.ValidMode,port?:number,host?:string){
     return new Slokr(type,port,host)
 }
+
+Object.assign(slokr, {
+    WebSocket: Slokr.WebSocket,
+    WebTransport: Slokr.WebTransport,
+    Hybrid: Slokr.Hybrid,
+    ValidModes: Slokr.ValidModes,
+    Slokr,
+});
+
+export default slokr;
