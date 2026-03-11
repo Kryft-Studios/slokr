@@ -232,6 +232,88 @@ export namespace Slokr.EVENT {
     }
 }
 
-export default function slokr(type:Slokr.ValidMode,port?:number,host?:string){
+export function slokr(type:Slokr.ValidMode,port?:number,host?:string){
     return new Slokr(type,port,host)
 }
+export namespace slokr {
+    export type WebSocket = "WebSocket"
+    export type WebTransport = "WebTransport"
+    export type Hybrid = "Hybrid"
+    export const WebSocket = "WebSocket"
+    export const WebTransport = "WebTransport"
+    export const Hybrid = "Hybrid"
+    export const ValidModes = [Slokr.WebSocket, Slokr.WebTransport, Slokr.Hybrid]
+    export type ValidMode = typeof Slokr.ValidModes[number]
+    export class Error extends globalThis.Error {
+        constructor(message?: string) {
+            super(message);
+            this.name = "Slokr"
+        }
+    }
+    export const HANDLE = "";
+    export type CACHE = { [key: string]: unknown }
+    export type FLAGS = { [key: string]: unknown, wt?: boolean, ws?: boolean, hy?: boolean }
+    export type EVENTS = { [key: string]: EVENT[] };
+    export type EVENT = (data: string, client: Slokr.Client) => any;
+    export class Client {
+        public slikr!: {
+            version: string;
+        };
+        public time!: {
+            sentAt: number;
+            timeTaken: number;
+            recievedAt: number;
+        };
+        public client!: {
+            averagePerformance: number;
+            ip?: string;
+            from: Slokr.WebSocket | Slokr.WebTransport;
+            userAgent?: string;
+        };
+        public raw!: ArrayBuffer | Buffer | Buffer[];
+        public slokr!: {
+            mode: Slokr.ValidMode;
+        };
+        public eventname!: string;
+        public join!: (room: string) => any;
+        public leave!: (room: string) => any;
+        public broadcast!: (room: string, name: string, data: any) => Promise<any>;
+        public reply!: (name: string, data: any) => Promise<any>;
+
+        constructor(evinfo: Slokr.EVENT.DATA) {
+            Object.assign(this, evinfo);
+        }
+    }
+}
+export namespace slokr.HANDLE {
+    export type TYPE = { receive: (data: string, timeout: number) => Promise<any>, send: (target: any, name: string, data: string) => Promise<any>, wtSessions: any[], [key: string]: unknown, cache: CACHE_TYPE, on: Function, WebTransport: Function, WebSocket: Function, https?: HTTPSServer | HTTPServer, wt?: Http3Server, ws?: WebSocketServer, events: Slokr.EVENTS }
+    export type CACHE_TYPE = { [key: string]: unknown, handleon?: Function }
+};
+export namespace slokr.EVENT {
+    export interface DATA {
+        slikr: {
+            version: string
+        };
+        time: {
+            sentAt: number,
+            timeTaken: number;
+            recievedAt: number;
+        }
+        client: {
+            averagePerformance: number;
+            ip?: string;
+            from: Slokr.WebSocket | Slokr.WebTransport;
+            userAgent?: string;
+        };
+        raw: ArrayBuffer | Buffer<ArrayBufferLike> | Buffer<ArrayBufferLike>[],
+        slokr: {
+            mode: Slokr.ValidMode
+        },
+        eventname: string,
+        join: (room: string) => any;
+        leave: (room: string) => any;
+        broadcast: (room: string, name: string, data: any) => Promise<any>;
+        reply: (name: string, data: any) => Promise<any>
+    }
+}
+export default slokr
