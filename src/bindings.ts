@@ -11,8 +11,10 @@ export class Bindings {
     wss?: WebSocketServer;
     https?: HTTPSServer | HTTPServer;
     oncf: Function[] = []
+    onef: Function[] = []
     wsconnected?: boolean;
     wtconnected?: boolean;
+    startupError?: Error;
     #onconnected(a: Function) {
         this.oncf.push(a)
     }
@@ -27,6 +29,7 @@ export class Bindings {
         }
         return new Promise((resolve) => {
             this.#onconnected(() => { resolve("connected") })
+            this.#onerror((error: Error) => reject(error))
         })
     }
     constructor(type: Slokr.ValidMode, port: number = 3000, host: string = "0.0.0.0") {
@@ -210,9 +213,27 @@ export class Bindings {
                 secret: "SLOKR-SECRET",
             });
             this.handle.wt = this.wt
-            this.wt.startServer();
+            try {
+                this.wt.startServer();
+                this.wtconnected = true;
+                const isHybridReady = (this.#type === Slokr.Hybrid && this.wsconnected && this.wtconnected);
+                const isSingleReady = (this.#type === Slokr.WebTransport && this.wtconnected);
+
+                if (isHybridReady || isSingleReady) {
+                    this.oncf.forEach(a => a());
+                }
+            } catch (error) {
+                this.#emitError(error);
+                return;
+            }
+
+            const wtAny = this.wt as any;
+            if (wtAny?.on) {
+                wtAny.on("error", (error: Error) => this.#emitError(error));
+            }
             const sessions = this.wt.sessionStream("/");
             (async () => {
+                try {
                 for await (const session of sessions) {
                     await session.ready;
                     this.handle.wtSessions.push(session);
@@ -246,13 +267,6 @@ export class Bindings {
                         this.stats.connections--;
                         this.fullCleanup(session);
                     });
-                    this.wtconnected = true;
-                    const isHybridReady = (this.#type === Slokr.Hybrid && this.wsconnected && this.wtconnected);
-                    const isSingleReady = (this.#type === Slokr.WebTransport && this.wtconnected);
-
-                    if (isHybridReady || isSingleReady) {
-                        this.oncf.forEach(a => a());
-                    }
                     // handle here
                     const connectionEvents = this.handle.events["connection"] ?? [];
 
@@ -278,6 +292,9 @@ export class Bindings {
                         fn("connected", clientObj);
                     }
                     this.#handleWebTransportSession(session);
+                }
+                } catch (error) {
+                    this.#emitError(error);
                 }
             })();
         },
@@ -314,6 +331,8 @@ export class Bindings {
                 server: this.https,
             });
             this.handle.wss = this.wss
+            this.wss.on("error", (error) => this.#emitError(error));
+            this.https.on("error", (error) => this.#emitError(error));
             this.https.listen(port, host, () => {
                 this.wsconnected = true;
                 const isHybridReady = (this.#type === Slokr.Hybrid && this.wtconnected && this.wsconnected);
