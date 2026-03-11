@@ -1,5 +1,6 @@
 import { Bindings } from "./bindings.js";
 import { Server as HTTPSServer } from "node:https";
+import { Server as HTTPServer } from "node:http";
 import { Http3Server } from "@fails-components/webtransport";
 import { WebSocketServer } from "ws";
 export class Slokr {
@@ -200,7 +201,7 @@ export namespace Slokr {
     }
 }
 export namespace Slokr.HANDLE {
-    export type TYPE = { receive: (data: string, timeout: number) => Promise<any>, send: (target: any, name: string, data: string) => Promise<any>, wtSessions: any[], [key: string]: unknown, cache: CACHE_TYPE, on: Function, WebTransport: Function, WebSocket: Function, https?: HTTPSServer, wt?: Http3Server, ws?: WebSocketServer, events: Slokr.EVENTS }
+    export type TYPE = { receive: (data: string, timeout: number) => Promise<any>, send: (target: any, name: string, data: string) => Promise<any>, wtSessions: any[], [key: string]: unknown, cache: CACHE_TYPE, on: Function, WebTransport: Function, WebSocket: Function, https?: HTTPSServer | HTTPServer, wt?: Http3Server, ws?: WebSocketServer, events: Slokr.EVENTS }
     export type CACHE_TYPE = { [key: string]: unknown, handleon?: Function }
 };
 export namespace Slokr.EVENT {

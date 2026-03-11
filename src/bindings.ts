@@ -2,20 +2,29 @@ import { Http3Server } from "@fails-components/webtransport";
 import { WebSocketServer } from "ws";
 import { Slokr } from "./index.js";
 import { genCerts } from "./WebTransport/certs.js";
-import { createServer, Server as HTTPSServer } from "node:https";
+import { createServer as createHttpsServer, Server as HTTPSServer } from "node:https";
+import { createServer as createHttpServer, Server as HTTPServer } from "node:http";
 import { DataTools } from "@briklab/slikr/datatools"
 export class Bindings {
     #type: Slokr.ValidMode;
     wt?: Http3Server;
     wss?: WebSocketServer;
-    https?: HTTPSServer;
+    https?: HTTPSServer | HTTPServer;
     oncf: Function[] = []
     wsconnected?: boolean;
     wtconnected?: boolean;
     #onconnected(a: Function) {
         this.oncf.push(a)
     }
+    #isConnected() {
+        if (this.#type === Slokr.WebSocket) return Boolean(this.wsconnected);
+        if (this.#type === Slokr.WebTransport) return Boolean(this.wtconnected);
+        return Boolean(this.wsconnected && this.wtconnected);
+    }
     get connected() {
+        if (this.#isConnected()) {
+            return Promise.resolve("connected");
+        }
         return new Promise((resolve) => {
             this.#onconnected(() => { resolve("connected") })
         })
@@ -208,6 +217,7 @@ export class Bindings {
                     await session.ready;
                     this.handle.wtSessions.push(session);
                     this.joinRoom("global", session);
+                    this.stats.connections++;
                     session.closed.then(() => {
                         const closeEvents = this.handle.events["close"] ?? [];
                         let closeInfo: Slokr.EVENT.DATA = {
@@ -233,6 +243,7 @@ export class Bindings {
                         }
                         this.leaveRoom("global", session)
                         this.handle.wtSessions = this.handle.wtSessions.filter(s => s !== session);
+                        this.stats.connections--;
                         this.fullCleanup(session);
                     });
                     this.wtconnected = true;
@@ -290,10 +301,14 @@ export class Bindings {
         },
         wtSessions: [],
         WebSocket: async (host: string, port: number, certificate: genCerts.returns) => {
-            this.https = createServer({
-                key: certificate.key,
-                cert: certificate.cert,
-            });
+            if (this.#type === Slokr.WebSocket) {
+                this.https = createHttpServer();
+            } else {
+                this.https = createHttpsServer({
+                    key: certificate.key,
+                    cert: certificate.cert,
+                });
+            }
             this.handle.https = this.https
             this.wss = new WebSocketServer({
                 server: this.https,
@@ -375,7 +390,13 @@ export class Bindings {
                         return;
                     }
                     rtdata.push(now);
-                    const data = raw.toString();
+
+                    let rawBuffer: Buffer;
+                    if (Buffer.isBuffer(raw)) rawBuffer = raw;
+                    else if (Array.isArray(raw)) rawBuffer = Buffer.concat(raw);
+                    else rawBuffer = Buffer.from(raw);
+
+                    const data = rawBuffer.toString();
                     let parsed = DataTools.get(data);
                     if (!parsed) return socket.send(Buffer.from(JSON.stringify({
                         isError: true,
@@ -384,6 +405,14 @@ export class Bindings {
                         code: "EUNKNOWN",
                         from: "Slokr",
                     })))
+
+                    if (parsed.name === "SLIKR_INTERNAL_EVENT") {
+                        const { room, do: action } = parsed.payload;
+                        if (action === "join") this.joinRoom(room, socket);
+                        if (action === "leave") this.leaveRoom(room, socket);
+                        return;
+                    }
+
                     const events = this.handle.events[parsed.name] ?? [];
                     let eventinfo: Slokr.EVENT.DATA = {
                         eventname: parsed.name,
@@ -401,7 +430,7 @@ export class Bindings {
                             from: Slokr.WebSocket,
                             userAgent: request.headers["user-agent"]
                         },
-                        raw,
+                        raw: rawBuffer,
                         slokr: {
                             mode: this.#type
                         },
