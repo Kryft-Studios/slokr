@@ -15,7 +15,15 @@ export class Bindings {
     #onconnected(a: Function) {
         this.oncf.push(a)
     }
+    #isConnected() {
+        if (this.#type === Slokr.WebSocket) return Boolean(this.wsconnected);
+        if (this.#type === Slokr.WebTransport) return Boolean(this.wtconnected);
+        return Boolean(this.wsconnected && this.wtconnected);
+    }
     get connected() {
+        if (this.#isConnected()) {
+            return Promise.resolve("connected");
+        }
         return new Promise((resolve) => {
             this.#onconnected(() => { resolve("connected") })
         })
@@ -208,6 +216,7 @@ export class Bindings {
                     await session.ready;
                     this.handle.wtSessions.push(session);
                     this.joinRoom("global", session);
+                    this.stats.connections++;
                     session.closed.then(() => {
                         const closeEvents = this.handle.events["close"] ?? [];
                         let closeInfo: Slokr.EVENT.DATA = {
@@ -233,6 +242,7 @@ export class Bindings {
                         }
                         this.leaveRoom("global", session)
                         this.handle.wtSessions = this.handle.wtSessions.filter(s => s !== session);
+                        this.stats.connections--;
                         this.fullCleanup(session);
                     });
                     this.wtconnected = true;
