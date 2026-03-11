@@ -2,22 +2,45 @@ import { Http3Server } from "@fails-components/webtransport";
 import { WebSocketServer } from "ws";
 import { Slokr } from "./index.js";
 import { genCerts } from "./WebTransport/certs.js";
-import { createServer, Server as HTTPSServer } from "node:https";
+import { createServer as createHttpsServer, Server as HTTPSServer } from "node:https";
+import { createServer as createHttpServer, Server as HTTPServer } from "node:http";
 import { DataTools } from "@briklab/slikr/datatools"
 export class Bindings {
     #type: Slokr.ValidMode;
     wt?: Http3Server;
     wss?: WebSocketServer;
-    https?: HTTPSServer;
+    https?: HTTPSServer | HTTPServer;
     oncf: Function[] = []
+    onef: Function[] = []
     wsconnected?: boolean;
     wtconnected?: boolean;
+    startupError?: Error;
     #onconnected(a: Function) {
         this.oncf.push(a)
     }
+    #onerror(a: Function) {
+        this.onef.push(a)
+    }
+    #emitError(error: unknown) {
+        const normalized = error instanceof Error ? error : new Slokr.Error(String(error));
+        this.startupError = normalized;
+        for (const fn of this.onef) fn(normalized);
+    }
+    #isConnected() {
+        if (this.#type === Slokr.WebSocket) return Boolean(this.wsconnected);
+        if (this.#type === Slokr.WebTransport) return Boolean(this.wtconnected);
+        return Boolean(this.wsconnected && this.wtconnected);
+    }
     get connected() {
-        return new Promise((resolve) => {
+        if (this.#isConnected()) {
+            return Promise.resolve("connected");
+        }
+        if (this.startupError) {
+            return Promise.reject(this.startupError);
+        }
+        return new Promise((resolve, reject) => {
             this.#onconnected(() => { resolve("connected") })
+            this.#onerror((error: Error) => reject(error))
         })
     }
     constructor(type: Slokr.ValidMode, port: number = 3000, host: string = "0.0.0.0") {
@@ -201,13 +224,32 @@ export class Bindings {
                 secret: "SLOKR-SECRET",
             });
             this.handle.wt = this.wt
-            this.wt.startServer();
+            try {
+                this.wt.startServer();
+                this.wtconnected = true;
+                const isHybridReady = (this.#type === Slokr.Hybrid && this.wsconnected && this.wtconnected);
+                const isSingleReady = (this.#type === Slokr.WebTransport && this.wtconnected);
+
+                if (isHybridReady || isSingleReady) {
+                    this.oncf.forEach(a => a());
+                }
+            } catch (error) {
+                this.#emitError(error);
+                return;
+            }
+
+            const wtAny = this.wt as any;
+            if (wtAny?.on) {
+                wtAny.on("error", (error: Error) => this.#emitError(error));
+            }
             const sessions = this.wt.sessionStream("/");
             (async () => {
+                try {
                 for await (const session of sessions) {
                     await session.ready;
                     this.handle.wtSessions.push(session);
                     this.joinRoom("global", session);
+                    this.stats.connections++;
                     session.closed.then(() => {
                         const closeEvents = this.handle.events["close"] ?? [];
                         let closeInfo: Slokr.EVENT.DATA = {
@@ -233,15 +275,9 @@ export class Bindings {
                         }
                         this.leaveRoom("global", session)
                         this.handle.wtSessions = this.handle.wtSessions.filter(s => s !== session);
+                        this.stats.connections--;
                         this.fullCleanup(session);
                     });
-                    this.wtconnected = true;
-                    const isHybridReady = (this.#type === Slokr.Hybrid && this.wsconnected && this.wtconnected);
-                    const isSingleReady = (this.#type === Slokr.WebTransport && this.wtconnected);
-
-                    if (isHybridReady || isSingleReady) {
-                        this.oncf.forEach(a => a());
-                    }
                     // handle here
                     const connectionEvents = this.handle.events["connection"] ?? [];
 
@@ -268,6 +304,9 @@ export class Bindings {
                     }
                     this.#handleWebTransportSession(session);
                 }
+                } catch (error) {
+                    this.#emitError(error);
+                }
             })();
         },
         async send(target: any, name: string, payload: any) {
@@ -290,15 +329,21 @@ export class Bindings {
         },
         wtSessions: [],
         WebSocket: async (host: string, port: number, certificate: genCerts.returns) => {
-            this.https = createServer({
-                key: certificate.key,
-                cert: certificate.cert,
-            });
+            if (this.#type === Slokr.WebSocket) {
+                this.https = createHttpServer();
+            } else {
+                this.https = createHttpsServer({
+                    key: certificate.key,
+                    cert: certificate.cert,
+                });
+            }
             this.handle.https = this.https
             this.wss = new WebSocketServer({
                 server: this.https,
             });
             this.handle.wss = this.wss
+            this.wss.on("error", (error) => this.#emitError(error));
+            this.https.on("error", (error) => this.#emitError(error));
             this.https.listen(port, host, () => {
                 this.wsconnected = true;
                 const isHybridReady = (this.#type === Slokr.Hybrid && this.wtconnected && this.wsconnected);
@@ -375,7 +420,13 @@ export class Bindings {
                         return;
                     }
                     rtdata.push(now);
-                    const data = raw.toString();
+
+                    let rawBuffer: Buffer;
+                    if (Buffer.isBuffer(raw)) rawBuffer = raw;
+                    else if (Array.isArray(raw)) rawBuffer = Buffer.concat(raw);
+                    else rawBuffer = Buffer.from(raw);
+
+                    const data = rawBuffer.toString();
                     let parsed = DataTools.get(data);
                     if (!parsed) return socket.send(Buffer.from(JSON.stringify({
                         isError: true,
@@ -384,6 +435,14 @@ export class Bindings {
                         code: "EUNKNOWN",
                         from: "Slokr",
                     })))
+
+                    if (parsed.name === "SLIKR_INTERNAL_EVENT") {
+                        const { room, do: action } = parsed.payload;
+                        if (action === "join") this.joinRoom(room, socket);
+                        if (action === "leave") this.leaveRoom(room, socket);
+                        return;
+                    }
+
                     const events = this.handle.events[parsed.name] ?? [];
                     let eventinfo: Slokr.EVENT.DATA = {
                         eventname: parsed.name,
@@ -401,7 +460,7 @@ export class Bindings {
                             from: Slokr.WebSocket,
                             userAgent: request.headers["user-agent"]
                         },
-                        raw,
+                        raw: rawBuffer,
                         slokr: {
                             mode: this.#type
                         },
