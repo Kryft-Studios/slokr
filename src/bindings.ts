@@ -18,14 +18,6 @@ export class Bindings {
     #onconnected(a: Function) {
         this.oncf.push(a)
     }
-    #onerror(a: Function) {
-        this.onef.push(a)
-    }
-    #emitError(error: unknown) {
-        const normalized = error instanceof Error ? error : new Slokr.Error(String(error));
-        this.startupError = normalized;
-        for (const fn of this.onef) fn(normalized);
-    }
     #isConnected() {
         if (this.#type === Slokr.WebSocket) return Boolean(this.wsconnected);
         if (this.#type === Slokr.WebTransport) return Boolean(this.wtconnected);
@@ -35,10 +27,7 @@ export class Bindings {
         if (this.#isConnected()) {
             return Promise.resolve("connected");
         }
-        if (this.startupError) {
-            return Promise.reject(this.startupError);
-        }
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             this.#onconnected(() => { resolve("connected") })
             this.#onerror((error: Error) => reject(error))
         })

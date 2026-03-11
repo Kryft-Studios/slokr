@@ -7,7 +7,7 @@
 	"type": "module",
 	"description": "",
 	"name": "@briklab/slokr",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"publishConfig": {
 		"access": "public"
 	},
